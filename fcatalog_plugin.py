@@ -138,6 +138,45 @@ def get_similarity_cut():
     return sim_cut
 
 
+action_handler_t = getattr(idaapi, 'action_handler_t', object)
+class MenuItemHandler(action_handler_t):
+    def __init__(self, handler, ud):
+        super(MenuItemHandler, self).__init__()
+        self.cb = handler
+        self.ud = ud
+
+    def activate(self, ctx):
+        self.cb(self.ud)
+
+    def update(self, ctx):
+        return idaapi.AST_ENABLE_ALWAYS
+
+def add_menu_item(path, name, handler, ud=None):
+    if idaapi.IDA_SDK_VERSION < 700:
+        return idaapi.add_menu_item(path, name, "", 0, handler, (None,))
+
+    id = __name__ + name
+    path = path + name
+    action = idaapi.action_desc_t(
+        id,
+        name,
+        MenuItemHandler(handler, ud),
+        '',
+        '',
+        0
+    )
+    idaapi.register_action(action)
+    idaapi.attach_action_to_menu(path, id, idaapi.SETMENU_APP)
+    return {'action': action, 'path': path, 'id': id}
+
+def del_menu_item(ctx):
+    if idaapi.IDA_SDK_VERSION < 700:
+        return idaapi.del_menu_item(ctx)
+
+    idaapi.detach_action_from_menu(ctx['path'], ctx['id'])
+    idaapi.unregister_action(ctx['id'])
+
+
 class FCatalogPlugin(idaapi.plugin_t):
     flags = 0
     comment = ''
@@ -166,31 +205,19 @@ class FCatalogPlugin(idaapi.plugin_t):
         # Set up menus:
         ui_path = "Edit/"
         self.menu_contexts = []
-        self.menu_contexts.append(idaapi.add_menu_item(ui_path,
+        self.menu_contexts.append(add_menu_item(ui_path,
                                 "FCatalog: Configure",
-                                "",
-                                0,
-                                self._show_conf_form,
-                                (None,)))
+                                self._show_conf_form))
 
-        self.menu_contexts.append(idaapi.add_menu_item(ui_path,
+        self.menu_contexts.append(add_menu_item(ui_path,
                                 "FCatalog: Commit Functions",
-                                "",
-                                0,
-                                self._commit_funcs,
-                                (None,)))
-        self.menu_contexts.append(idaapi.add_menu_item(ui_path,
+                                self._commit_funcs))
+        self.menu_contexts.append(add_menu_item(ui_path,
                                 "FCatalog: Find Similars",
-                                "",
-                                0,
-                                self._find_similars,
-                                (None,)))
-        self.menu_contexts.append(idaapi.add_menu_item(ui_path,
+                                self._find_similars))
+        self.menu_contexts.append(add_menu_item(ui_path,
                                 "FCatalog: Clean IDB",
-                                "",
-                                0,
-                                self._clean_idb,
-                                (None,)))
+                                self._clean_idb))
 
         return idaapi.PLUGIN_KEEP
 
@@ -202,7 +229,7 @@ class FCatalogPlugin(idaapi.plugin_t):
         Terminate plugin
         """
         for context in self.menu_contexts:
-            idaapi.del_menu_item(context)
+            del_menu_item(context)
         return None
 
 
